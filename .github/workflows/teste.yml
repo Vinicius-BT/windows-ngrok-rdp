@@ -1,22 +1,35 @@
-services:
-  windows:
-    image: dockurr/windows
-    container_name: windows
-    environment:
-      VERSION: "10"
-      USERNAME: "MASTER"
-      PASSWORD: "admin@123"
-      RAM_SIZE: "4G"
-      CPU_CORES: "4"
-      DISK_SIZE: "400G"
-      DISK2_SIZE: "100G"
-    devices:
-      - /dev/kvm
-      - /dev/net/tun  # Corrected line: Added hyphen and proper indentation
-    cap_add:
-      - NET_ADMIN      # Corrected: cap_add also expects a list
-    ports:
-      - "8006:8006"
-      - "3389:3389/tcp"
-      - "3389:3389/udp"
-    stop_grace_period: 2m
+name: Windows RDP
+
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 9999
+
+    steps:
+      - name: Install ngrok
+        run: choco install ngrok
+
+      - name: Authenticate ngrok
+        run: ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: Enable Remote Desktop
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "@cyb3rking" -Force)
+
+      - name: Start ngrok tunnel in background
+        run: Start-Process ngrok -ArgumentList 'tcp 3389' -NoNewWindow
+
+      - name: Wait for ngrok to start
+        run: Start-Sleep -Seconds 10
+
+      - name: Get public ngrok endpoint
+        shell: pwsh
+        run: |
+          $tunnels = Invoke-RestMethod http://127.0.0.1:4040/api/tunnels
+          $endpoint = $tunnels.tunnels.public_url
+          Write-Host "`n✅ RDP endpoint (copie no app Remote Desktop): $endpoint`n"
